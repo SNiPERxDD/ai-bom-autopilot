@@ -10,7 +10,7 @@
 
 **One-command setup and demo:**
 ```bash
-git clone <your-repo>
+git clone https://github.com/SNiPERxDD/ai-bom-autopilot.git
 cd ai-bom-autopilot
 ./run.sh
 ```
