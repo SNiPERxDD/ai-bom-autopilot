@@ -10,11 +10,11 @@ cleanup() {
   if [ -n "$API_PID" ]; then kill $API_PID 2>/dev/null || true; fi
   if [ -n "$UI_PID" ]; then kill $UI_PID 2>/dev/null || true; fi
 
-  # Unset all mapped env vars so they don’t persist after session
+  # Unset all mapped env vars so they don’t persist
   unset DB_NAME DB_USER DB_PASS TIDB_URL
   unset OPENAI_API_KEY GEMINI_API_KEY SLACK_WEBHOOK_URL
   unset JIRA_URL JIRA_USERNAME JIRA_API_TOKEN JIRA_PROJECT_KEY
-  unset HF_TOKEN DEBUG LOG_LEVEL DRY_RUN API_URL
+  unset HF_TOKEN DEBUG LOG_LEVEL DRY_RUN API_URL DATABASE_URL
 
   exit 0
 }
@@ -44,8 +44,6 @@ export DEBUG="${DEBUG:-true}"
 export LOG_LEVEL="${LOG_LEVEL:-INFO}"
 export DRY_RUN="${DRY_RUN:-false}"
 
-# ==========================================
-
 # Get absolute path to script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 cd "$SCRIPT_DIR"
@@ -55,6 +53,20 @@ if [ ! -f .env ]; then
     echo "❌ .env file not found. Copying from .env.example..."
     cp .env.example .env
 fi
+
+# Load .env (local dev only; won’t override Copilot MCP if already set)
+set -a
+source .env
+set +a
+
+# Ensure DB vars are set
+if [ -z "$DB_USER" ] || [ -z "$DB_PASS" ] || [ -z "$DB_NAME" ] || [ -z "$TIDB_URL" ]; then
+  echo "❌ Missing DB credentials. Check .env or Copilot MCP secrets."
+  cleanup
+fi
+
+# Build DATABASE_URL for TiDB Cloud (MySQL-compatible, SSL required)
+export DATABASE_URL="mysql+pymysql://${DB_USER}:${DB_PASS}@${TIDB_URL}/${DB_NAME}?ssl=true"
 
 # Check if virtual environment exists
 if [ ! -d ".venv" ]; then
@@ -74,8 +86,11 @@ pip install -r requirements.txt
 export PYTHONPATH="$SCRIPT_DIR:$PYTHONPATH"
 
 # Run migrations
-echo "🗄️ Running database migrations..."
-python -m core.db.migrations up
+echo "🗄️ Running database migrations with $DATABASE_URL"
+python -m core.db.migrations up || {
+  echo "❌ Migration failed. Check DB creds or connectivity."
+  cleanup
+}
 
 # Start API server in background
 echo "🌐 Starting API server..."
