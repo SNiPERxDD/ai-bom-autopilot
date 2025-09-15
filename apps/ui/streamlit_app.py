@@ -1,6 +1,7 @@
 import streamlit as st
 import requests
 import json
+import os
 import pandas as pd
 from datetime import datetime
 import plotly.express as px
@@ -14,7 +15,7 @@ st.set_page_config(
 )
 
 # API base URL
-API_BASE = "http://localhost:8000"
+API_BASE = os.getenv("API_URL", "http://localhost:8000")
 
 def main():
     st.title("🔍 AI-BOM Autopilot")
@@ -90,7 +91,7 @@ def show_main_interface():
             projects = response.json() if response.status_code == 200 else []
         except requests.exceptions.RequestException:
             projects = []
-            st.error("Failed to connect to API. Make sure the backend is running on http://localhost:8000")
+            st.error(f"Failed to connect to API. Make sure the backend is running on {API_BASE}")
             return
         
         if not projects:
