@@ -470,7 +470,7 @@ python -m core.db.migrations status
 
 ## 📝 License
 
-MIT License - see [LICENSE](LICENSE) file for details.
+See [LICENSE](LICENSE) file for details.
 
 ## 🤝 Contributing
 
