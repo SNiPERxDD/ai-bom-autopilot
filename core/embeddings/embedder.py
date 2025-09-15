@@ -18,7 +18,15 @@ class EmbeddingService:
     
     def __init__(self):
         self.provider = config('EMBED_PROVIDER', default='openai').lower()
-        self.encoding = tiktoken.get_encoding("cl100k_base")
+        
+        # Try to initialize tiktoken encoding with fallback
+        try:
+            self.encoding = tiktoken.get_encoding("cl100k_base")
+        except Exception as e:
+            logger.warning(f"Failed to load tiktoken encoding (network issue): {e}")
+            # Create a mock encoding for offline testing
+            self.encoding = None
+            
         self.max_tokens_per_chunk = 800
         self.chunk_overlap = 100
         
@@ -198,7 +206,12 @@ class EmbeddingService:
             text_chunks = self._split_text(content)
             
             for i, chunk_text in enumerate(text_chunks):
-                token_count = len(self.encoding.encode(chunk_text))
+                # Calculate token count with fallback
+                if self.encoding:
+                    token_count = len(self.encoding.encode(chunk_text))
+                else:
+                    # Rough approximation: 4 chars per token on average
+                    token_count = len(chunk_text) // 4
                 
                 chunk = EvidenceChunk(
                     project_id=project_id,
@@ -233,6 +246,10 @@ class EmbeddingService:
     
     def _split_text(self, text: str) -> List[str]:
         """Split text into chunks with overlap"""
+        if not self.encoding:
+            # Fallback to character-based chunking if encoding is unavailable
+            return self._split_text_by_chars(text)
+            
         tokens = self.encoding.encode(text)
         chunks = []
         
@@ -254,6 +271,42 @@ class EmbeddingService:
             start = end - self.chunk_overlap
             if start >= end:  # Prevent infinite loop
                 start = end
+        
+        return chunks
+    
+    def _split_text_by_chars(self, text: str) -> List[str]:
+        """Fallback text splitting by character count when encoding is unavailable"""
+        # Approximate: 800 tokens ≈ 3200 characters (4 chars per token average)
+        max_chars = self.max_tokens_per_chunk * 4
+        overlap_chars = self.chunk_overlap * 4
+        
+        if len(text) <= max_chars:
+            return [text]
+        
+        chunks = []
+        start = 0
+        
+        while start < len(text):
+            end = min(start + max_chars, len(text))
+            
+            # Try to break at word boundaries to avoid cutting words
+            if end < len(text):
+                # Look for the last space or newline before the cutoff
+                last_break = max(
+                    text.rfind(' ', start, end),
+                    text.rfind('\n', start, end),
+                    text.rfind('\t', start, end)
+                )
+                if last_break > start:
+                    end = last_break
+            
+            chunks.append(text[start:end])
+            
+            if end >= len(text):
+                break
+                
+            # Move start with overlap
+            start = max(end - overlap_chars, start + 1)  # Ensure progress
         
         return chunks
     

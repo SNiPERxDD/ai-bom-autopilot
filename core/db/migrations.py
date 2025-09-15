@@ -16,7 +16,14 @@ def test_fulltext_support():
     
     try:
         with db_manager.engine.connect() as conn:
-            # Try to create a temporary table with FULLTEXT index
+            # Check if this is SQLite
+            if 'sqlite' in str(db_manager.engine.url):
+                # SQLite doesn't support FULLTEXT in the same way
+                FTS_ENABLED = False
+                logger.warning("❌ SQLite detected - falling back to BM25")
+                return False
+            
+            # Try to create a temporary table with FULLTEXT index for MySQL/TiDB
             conn.execute(text("""
                 CREATE TEMPORARY TABLE test_fulltext_support (
                     id INT PRIMARY KEY AUTO_INCREMENT,
@@ -32,15 +39,182 @@ def test_fulltext_support():
         logger.warning(f"❌ FULLTEXT indexes not supported - falling back to BM25: {e}")
         return False
 
-def run_migrations():
-    """Run database migrations"""
-    engine = db_manager.engine
-    capabilities = db_manager.capabilities
+def get_migration_sql(is_sqlite=False):
+    """Get migration SQL adapted for the database type"""
     
-    # Test FULLTEXT support and set global flag
-    test_fulltext_support()
-    
-    migrations = [
+    if is_sqlite:
+        # SQLite-compatible migrations
+        return [
+            """
+            CREATE TABLE IF NOT EXISTS projects(
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              name VARCHAR(255) UNIQUE,
+              repo_url TEXT,
+              default_branch VARCHAR(64)
+            )
+            """,
+            
+            """
+            CREATE TABLE IF NOT EXISTS models(
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              project_id INTEGER, 
+              name VARCHAR(255), 
+              provider VARCHAR(128),
+              version VARCHAR(128), 
+              license VARCHAR(128),
+              source_url TEXT, 
+              repo_path TEXT, 
+              commit_sha CHAR(40), 
+              meta TEXT,
+              FOREIGN KEY (project_id) REFERENCES projects(id)
+            )
+            """,
+            
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS uk_model ON models(project_id, name, provider, version)
+            """,
+            
+            """
+            CREATE TABLE IF NOT EXISTS datasets(
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              project_id INTEGER, 
+              name VARCHAR(255), 
+              version VARCHAR(128),
+              license VARCHAR(128), 
+              source_url TEXT, 
+              commit_sha CHAR(40), 
+              meta TEXT,
+              FOREIGN KEY (project_id) REFERENCES projects(id)
+            )
+            """,
+            
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS uk_dataset ON datasets(project_id, name, version)
+            """,
+            
+            """
+            CREATE TABLE IF NOT EXISTS prompt_blobs(
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              sha CHAR(64) UNIQUE,
+              content TEXT
+            )
+            """,
+            
+            """
+            CREATE TABLE IF NOT EXISTS prompts(
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              project_id INTEGER, 
+              name VARCHAR(255), 
+              version VARCHAR(128),
+              sha CHAR(64),
+              repo_path TEXT, 
+              commit_sha CHAR(40), 
+              meta TEXT,
+              FOREIGN KEY (project_id) REFERENCES projects(id),
+              FOREIGN KEY (sha) REFERENCES prompt_blobs(sha)
+            )
+            """,
+            
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS uk_prompt ON prompts(project_id, name, version)
+            """,
+            
+            """
+            CREATE TABLE IF NOT EXISTS boms(
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              project_id INTEGER,
+              sha CHAR(64),
+              content TEXT,
+              created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+              FOREIGN KEY (project_id) REFERENCES projects(id)
+            )
+            """,
+            
+            """
+            CREATE TABLE IF NOT EXISTS bom_diffs(
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              project_id INTEGER,
+              from_bom BIGINT,
+              to_bom BIGINT,
+              summary TEXT,
+              created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+              FOREIGN KEY (project_id) REFERENCES projects(id),
+              FOREIGN KEY (from_bom) REFERENCES boms(id),
+              FOREIGN KEY (to_bom) REFERENCES boms(id)
+            )
+            """,
+            
+            """
+            CREATE TABLE IF NOT EXISTS evidence_chunks(
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              project_id INTEGER,
+              chunk_text TEXT,
+              file_path TEXT,
+              commit_sha CHAR(40),
+              line_start INTEGER,
+              line_end INTEGER,
+              emb TEXT,
+              FOREIGN KEY (project_id) REFERENCES projects(id)
+            )
+            """,
+            
+            """
+            CREATE TABLE IF NOT EXISTS policy_events(
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              project_id INTEGER,
+              rule VARCHAR(128),
+              severity VARCHAR(16),
+              artifact TEXT,
+              details TEXT,
+              dedupe_key VARCHAR(255),
+              created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+              FOREIGN KEY (project_id) REFERENCES projects(id)
+            )
+            """,
+            
+            """
+            CREATE TABLE IF NOT EXISTS policy_overrides(
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              project_id INTEGER,
+              rule VARCHAR(128),
+              pattern VARCHAR(255),
+              reason TEXT,
+              expires_at DATETIME,
+              FOREIGN KEY (project_id) REFERENCES projects(id)
+            )
+            """,
+            
+            """
+            CREATE TABLE IF NOT EXISTS actions(
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              project_id INTEGER,
+              kind VARCHAR(32),
+              payload TEXT,
+              response TEXT,
+              status VARCHAR(16),
+              created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+              FOREIGN KEY (project_id) REFERENCES projects(id)
+            )
+            """,
+            
+            """
+            CREATE TABLE IF NOT EXISTS runtime_events(
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              project_id INTEGER,
+              event_type VARCHAR(64),
+              artifact_name VARCHAR(255),
+              artifact_type VARCHAR(64),
+              process_id INTEGER,
+              file_path TEXT,
+              metadata TEXT,
+              created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+              FOREIGN KEY (project_id) REFERENCES projects(id)
+            )
+            """
+        ]
+    else:
+        # MySQL/TiDB migrations (original)
+        return [
         """
         CREATE TABLE IF NOT EXISTS projects(
           id BIGINT PRIMARY KEY AUTO_INCREMENT,
@@ -181,56 +355,32 @@ def run_migrations():
         )
         """,
         
-        """
-        CREATE TABLE IF NOT EXISTS actions(
-          id BIGINT PRIMARY KEY AUTO_INCREMENT,
-          project_id BIGINT, 
-          kind ENUM('slack','jira','email'),
-          payload JSON, 
-          response JSON, 
-          status ENUM('ok','fail') DEFAULT 'ok',
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        """
-    ]
+            """
+            CREATE TABLE IF NOT EXISTS actions(
+              id BIGINT PRIMARY KEY AUTO_INCREMENT,
+              project_id BIGINT, 
+              kind ENUM('slack','jira','email'),
+              payload JSON, 
+              response JSON, 
+              status ENUM('ok','fail') DEFAULT 'ok',
+              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        ]
+
+def run_migrations():
+    """Run database migrations"""
+    engine = db_manager.engine
+    capabilities = db_manager.capabilities
     
-    # Evidence chunks table - conditional on vector support
-    if capabilities['vector']:
-        evidence_sql = """
-        CREATE TABLE IF NOT EXISTS evidence_chunks(
-          id BIGINT PRIMARY KEY AUTO_INCREMENT,
-          project_id BIGINT,
-          ref_type ENUM('file','card','config','readme'),
-          ref_path TEXT, 
-          commit_sha CHAR(40), 
-          chunk_ix INT,
-          text LONGTEXT, 
-          token_count INT,
-          emb VECTOR(1536),
-          meta JSON,
-          KEY idx_evidence_proj_type (project_id, ref_type),
-          CONSTRAINT fk_evidence_project FOREIGN KEY (project_id) REFERENCES projects(id)
-        )
-        """
-    else:
-        # Fallback without vector column
-        evidence_sql = """
-        CREATE TABLE IF NOT EXISTS evidence_chunks(
-          id BIGINT PRIMARY KEY AUTO_INCREMENT,
-          project_id BIGINT,
-          ref_type ENUM('file','card','config','readme'),
-          ref_path TEXT, 
-          commit_sha CHAR(40), 
-          chunk_ix INT,
-          text LONGTEXT, 
-          token_count INT,
-          meta JSON,
-          KEY idx_evidence_proj_type (project_id, ref_type),
-          CONSTRAINT fk_evidence_project FOREIGN KEY (project_id) REFERENCES projects(id)
-        )
-        """
+    # Test FULLTEXT support and set global flag
+    test_fulltext_support()
     
-    migrations.append(evidence_sql)
+    # Detect if we're using SQLite
+    is_sqlite = 'sqlite' in str(engine.url)
+    
+    # Get the appropriate migrations
+    migrations = get_migration_sql(is_sqlite)
     
     with engine.connect() as conn:
         for i, migration in enumerate(migrations):
@@ -241,16 +391,16 @@ def run_migrations():
                 logger.error(f"Migration {i+1} failed: {e}")
                 raise
         
-        # Add fulltext index if supported
-        if FTS_ENABLED:
+        # Add fulltext index if supported (MySQL/TiDB only)
+        if FTS_ENABLED and not is_sqlite:
             try:
-                conn.execute(text("ALTER TABLE evidence_chunks ADD FULLTEXT KEY ft_text (text)"))
+                conn.execute(text("ALTER TABLE evidence_chunks ADD FULLTEXT KEY ft_text (chunk_text)"))
                 logger.info("✅ FULLTEXT index added to evidence_chunks")
             except Exception as e:
                 logger.warning(f"❌ Failed to add FULLTEXT index: {e}")
         
-        # Add vector index if supported
-        if capabilities['vector']:
+        # Add vector index if supported (MySQL/TiDB only)
+        if capabilities.get('vector') and not is_sqlite:
             try:
                 conn.execute(text("ALTER TABLE evidence_chunks ADD VECTOR INDEX vec_idx (emb)"))
                 logger.info("Vector index added to evidence_chunks")
