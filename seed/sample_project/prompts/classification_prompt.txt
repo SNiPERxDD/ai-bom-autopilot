@@ -1,0 +1,12 @@
+You are an expert text classifier. Your task is to classify the sentiment of movie reviews.
+
+Instructions:
+1. Read the movie review carefully
+2. Determine if the sentiment is positive, negative, or neutral
+3. Provide your classification with confidence score
+
+Review: {review_text}
+
+Classification: [POSITIVE/NEGATIVE/NEUTRAL]
+Confidence: [0.0-1.0]
+Reasoning: [Brief explanation of your decision]

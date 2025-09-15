@@ -1,0 +1,29 @@
+model:
+  name: "meta-llama/Llama-3.1-8B"
+  type: "causal-lm"
+  license: "custom"
+  
+dataset:
+  name: "imdb"
+  version: "1.0.0"
+  license: "Apache-2.0"
+  
+training:
+  batch_size: 16
+  learning_rate: 2e-5
+  epochs: 3
+  
+tokenizer:
+  name: "meta-llama/Llama-3.1-8B"
+  max_length: 512
+  
+evaluation:
+  metrics: ["accuracy", "f1", "precision", "recall"]
+  
+tools:
+  - name: "transformers"
+    version: "4.35.0"
+    type: "lib"
+  - name: "torch"
+    version: "2.1.0"
+    type: "lib"
