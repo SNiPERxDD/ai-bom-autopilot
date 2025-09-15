@@ -1,0 +1,527 @@
+Here are the three documents—Requirements, Design, and Implementation Plan—synthesized from your provided files, formatted in the requested Kiro style. They are point-to-point specific, incorporating every detail from the source materials.
+
+Requirements Document
+Introduction
+ML-BOM Autopilot is a tactical AI governance system designed to provide a verifiable, end-to-end audit trail for AI components. It automatically discovers models, datasets, prompts, and tools across code repositories, generates standards-compliant CycloneDX ML-BOMs, versions them in a hybrid Vector/FTS database, and executes policy checks to flag drift, license violations, and other risks. The system serves as a source-of-truth for AI compliance, security, and operational transparency.
+
+Requirements
+Requirement 1: Automated AI Asset Discovery
+User Story: As a DevSecOps engineer, I want the system to automatically scan our Git repositories and Hugging Face dependencies to discover all AI/ML assets, so that we have a complete and up-to-date inventory without manual effort.
+
+Acceptance Criteria
+WHEN a scan is initiated on a project THEN the system SHALL recursively walk the specified Git repository.
+WHEN scanning files THEN the system SHALL identify candidate artifacts in .py, .ipynb, .yaml, .json, .md, and .prompt files.
+WHEN Hugging Face model/dataset slugs are found THEN the system SHALL fetch the corresponding cards, licenses, and metadata from the HF Hub API.
+WHEN fetching from external sources like Hugging Face THEN the system SHALL cache responses by slug and version with a configurable TTL to optimize performance and cost.
+WHEN classifying artifacts THEN the system SHALL correctly categorize them as model, dataset, prompt, or tool, extracting metadata like hashes, file paths, and commit SHAs.
+Requirement 2: Standards-Compliant ML-BOM Generation
+User Story: As a compliance officer, I want the system to generate a standards-compliant Machine Learning Bill of Materials (ML-BOM), so that we can meet regulatory requirements (e.g., EU AI Act) and prove the integrity of our AI supply chain.
+
+Acceptance Criteria
+WHEN a scan completes THEN the system SHALL generate a CycloneDX ML-BOM in JSON format.
+WHEN the BOM is generated THEN it SHALL validate successfully against the official CycloneDX v1.6 JSON schema.
+WHEN performing validation THEN the system SHALL use a standard tool like cyclonedx-python-lib or sbom-utility and log a PASS status.
+WHEN the BOM is stored THEN the system SHALL log the SHA256 hash of the generated BOM JSON for audit purposes.
+WHEN storing prompts THEN the system SHALL de-duplicate large prompt content by SHA256 hash in a prompt_blobs table to conserve storage.
+Requirement 3: BOM Versioning and Drift Detection
+User Story: As an MLOps lead, I want to compare different versions of our AI stack to detect changes, so that I can immediately identify when a model has been upgraded, a dataset license has changed, or a critical prompt has been altered.
+
+Acceptance Criteria
+WHEN a new BOM is generated THEN the system SHALL store it in the boms table, versioned by a timestamp and a unique ID.
+WHEN a second scan completes THEN the system SHALL automatically generate a structural diff between the latest BOM and the previous one.
+WHEN generating a diff THEN the system SHALL use canonical, stable component IDs (e.g., project:name:kind:provider:version) to ensure accuracy.
+WHEN a diff is created THEN the structured summary SHALL be stored in the bom_diffs table, linking the from_bom and to_bom IDs.
+WHEN viewing a diff THEN the UI SHALL clearly highlight added, removed, and modified components, such as a model version changing from 8B to 70B.
+Requirement 4: Customizable Policy Engine
+User Story: As an AI governance manager, I want to define and enforce rules against our AI inventory, so that we can automatically flag non-compliant licenses, unexpected model drift, or changes to production prompts.
+
+Acceptance Criteria
+WHEN a BOM diff is generated THEN the system SHALL evaluate a predefined set of policies against the changes.
+WHEN a policy violation occurs THEN a corresponding record SHALL be created in the policy_events table, including severity, the rule violated, and the artifact details.
+WHEN the same event is triggered repeatedly THEN the system SHALL use a dedupe_key to collapse duplicates within a 24-hour window, preventing alert fatigue.
+WHEN a known false positive occurs THEN an operator SHALL be able to create an override in the policy_overrides table with a reason and expiration date.
+The policy engine SHALL support at minimum: missing_license, unapproved_license, unknown_provider, model_bump_major/minor, and prompt_changed_protected_path.
+Requirement 5: Multi-Channel Alerting and Action Logging
+User Story: As an on-call engineer, I want to receive immediate notifications in Slack or have a Jira ticket created when a high-severity policy violation is detected, so that my team can respond quickly.
+
+Acceptance Criteria
+WHEN a high-severity policy_event is created THEN the system SHALL trigger a notification to a configured external tool.
+WHEN sending a Slack notification THEN the system SHALL use a configured Incoming Webhook URL and send a formatted message detailing the violation.
+WHEN creating a Jira ticket THEN the system SHALL use the Jira Cloud REST API, project key, and API token to create an issue with relevant details.
+WHEN any outbound action is taken THEN a corresponding record SHALL be created in the actions table, logging the payload, response, and status (ok or fail).
+WHEN in DRY_RUN=true mode THEN the system SHALL perform all steps except writing to the database or sending external notifications.
+Requirement 6: Hybrid Evidence Retrieval (Vector + Full-Text)
+User Story: As an analyst investigating an incident, I want to perform both semantic and keyword searches across all collected evidence, so that I can quickly find context related to a policy violation.
+
+Acceptance Criteria
+WHEN evidence is indexed THEN text chunks SHALL be stored in the evidence_chunks table with a VECTOR(1536) column for embeddings by default.
+WHEN a user searches THEN the system SHALL perform an Approximate Nearest Neighbor (ANN) search using VEC_COSINE_DISTANCE in TiDB.
+WHEN TiDB FULLTEXT search is available in the cluster region THEN the system SHALL create a FULLTEXT index and use MATCH(...) AGAINST(...) for keyword search.
+WHEN TiDB FULLTEXT search is unavailable THEN the system SHALL automatically fall back to an in-application BM25 library (rank-bm25) and log FTS disabled -> BM25(app).
+WHEN both ANN and keyword searches are performed THEN their results SHALL be fused using a Reciprocal Rank Fusion (RRF) algorithm to provide a single, ranked list of evidence.
+Requirement 7: Multi-Provider Embedding Support
+User Story: As a developer, I want the flexibility to switch between different embedding providers like OpenAI and Gemini, so that I can optimize for cost or performance without being locked into one vendor.
+
+Acceptance Criteria
+WHEN the EMBED_PROVIDER environment variable is set to openai THEN the system SHALL use the OpenAI API and expect 1536-dimension embeddings.
+WHEN the EMBED_PROVIDER is set to gemini THEN the system SHALL use the Google Gemini API and expect 768-dimension embeddings.
+WHEN switching providers requires a dimension change THEN a database migration (ALTER TABLE evidence_chunks MODIFY COLUMN emb VECTOR(...)) SHALL be provided to resize the vector column.
+WHEN starting up THEN the system SHALL log which embedding provider and dimension are currently active.
+The system SHALL require the EMBEDDING_DIM environment variable to be set explicitly to match the provider's output, preventing data mismatch.
+Requirement 8: Minimalist Command-and-Control UI
+User Story: As an operator, I want a simple, single-page interface to run scans and review results, so that I can manage the AI inventory without a complex dashboard.
+
+Acceptance Criteria
+WHEN accessing the UI THEN a project selector and a "Run Scan" button SHALL be visible.
+WHEN a scan is complete THEN the UI SHALL present results in tabs for BOM, Diff, Policy, and Actions.
+WHEN viewing results THEN the user SHALL have buttons to trigger actions like "Open Jira ticket" or "Send Slack summary".
+WHEN starting up THEN the UI or a health check endpoint SHALL display the status of key dependencies (DB, vector index, FTS, API keys) with 🟢/🟡/🔴 indicators.
+The UI SHALL support a "Dry Run" mode toggle that prevents any database writes or external notifications.
+Design Document
+Overview
+ML-BOM Autopilot is architected as a stateful, agentic system orchestrated by LangGraph, leveraging TiDB Serverless as its core operational database for storing versioned AI asset inventories, their diffs, and the evidence supporting them. The system is designed for modularity, enabling flexible integration of different scanners, embedding providers, and notification tools. It prioritizes correctness and auditability through standards-compliant outputs (CycloneDX), hybrid search capabilities (ANN + FTS/BM25), and comprehensive action logging.
+
+Architecture
+High-Level System Architecture
+code
+Code
+
+download
+
+content_copy
+
+expand_less
+┌──────────────────┐     ┌─────────────────────┐      ┌────────────────────┐
+│   Input Sources  │────▶│    ML-BOM Autopilot │─────▶│  External Services │
+│                  │     │    (FastAPI + LangGraph)   │                    │
+│ • Git Repository │     │                     │      │ • TiDB Serverless  │
+│ • Hugging Face   │     │ • Scan/Normalize    │      │ • OpenAI/Gemini    │
+└──────────────────┘     │ • Embed/Index       │      │ • Slack Webhook    │
+                         │ • BOM/Diff/Policy   │      │ • Jira Cloud API   │
+                         │ • Notify            │      └────────────────────┘
+                         └─────────────────────┘
+                                  ▲
+                                  │
+                         ┌──────────────────┐
+                         │   Operator UI    │
+                         │(Streamlit/HTMX)  │
+                         └──────────────────┘
+Core Components Flow (LangGraph DAG)
+code
+Code
+
+download
+
+content_copy
+
+expand_less
+ScanPlan → ScanGit → ScanHF → Normalize → Embed+Index → BOMGen → DiffPrev → PolicyCheck → Notify → End
+Components and Interfaces
+1. Orchestrator (/core/graph/)
+LangGraph State Machine
+
+Defines the stateful graph that sequences the entire BOM generation process.
+Each node represents a service (e.g., ScanGit, BOMGen).
+Edges represent the flow of data (e.g., file candidates, normalized artifacts).
+Manages state, retries, and conditional logic (e.g., skip diff if it's the first BOM).
+Guards: Implements timeouts per node and tool allowlists (Slack, Jira only).
+2. Scanners & Normalizers (/core/scan_*/, /core/normalize/)
+code
+Python
+
+download
+
+content_copy
+
+expand_less
+class ScanGit:
+    def scan(self, repo_url: str, branch: str) -> List[FileCandidate]:
+        # Uses gitpython to walk repo, respecting .gitignore
+        # Returns list of file paths, content hashes, and commit SHAs
+
+class ScanHF:
+    def fetch_card(self, slug: str) -> HFCard:
+        # Fetches model/dataset card from HF Hub, parsing YAML front-matter
+        # Caches results in-memory or in a simple DB table
+
+class Normalize:
+    def classify_artifacts(self, candidates: list) -> List[NormalizedArtifact]:
+        # Classifies items as model, dataset, prompt, tool
+        # Runs scancode/licensee subprocess to map licenses to SPDX IDs
+        # Generates stable, canonical IDs for each artifact
+3. Database & Retrieval (/core/db/, /core/retrieval/)
+TiDB Client
+
+Manages connection to TiDB Serverless using a standard MySQL driver.
+Executes DDL migrations on startup, including a self-test to check for FULLTEXT support.
+Provides query functions for all CRUD operations.
+code
+Python
+
+download
+
+content_copy
+
+expand_less
+class HybridSearchEngine:
+    def search(self, query_text: str, project_id: int, top_k: int = 50) -> List[SearchResult]:
+        # 1. Embed query_text to get query_vector
+        query_vector = self.embedding_provider.embed(query_text)
+
+        # 2. Run ANN search in TiDB
+        ann_results = self.db.execute(
+            "SELECT id, VEC_COSINE_DISTANCE(emb, :qvec) d FROM evidence_chunks ORDER BY d ASC LIMIT :k;",
+            {"qvec": query_vector, "k": top_k}
+        )
+
+        # 3. Run Keyword search (FTS or BM25)
+        if self.fts_enabled:
+            keyword_results = self.db.execute(
+                "SELECT id, MATCH(text) AGAINST (:q) bm25 FROM evidence_chunks ORDER BY bm25 DESC LIMIT :k;",
+                {"q": query_text, "k": top_k}
+            )
+        else:
+            keyword_results = self.run_app_bm25(query_text, project_id, top_k)
+
+        # 4. Fuse results with RRF
+        fused_score = (1 / (60 + rank_ann)) + (1 / (60 + rank_keyword))
+        return self.rerank(ann_results, keyword_results, fused_score)
+4. Core Logic (/core/bom/, /core/diff/, /core/policy/)
+code
+Python
+
+download
+
+content_copy
+
+expand_less
+class BOMGenerator:
+    def generate(self, artifacts: List[NormalizedArtifact]) -> dict:
+        # Uses cyclonedx-python-lib to build the BOM object
+        # Returns a JSON-serializable dictionary adhering to CycloneDX v1.6 schema
+
+class BOMValidator:
+    def validate(self, bom_json: str) -> bool:
+        # Runs `cyclonedx-python-lib` or `sbom-utility` validator against the BOM
+        # Returns True if PASS, False otherwise
+
+class DiffEngine:
+    def compare(self, bom_a: dict, bom_b: dict) -> dict:
+        # Performs a structural comparison based on stable component IDs
+        # Ignores non-semantic fields (timestamps, formatting)
+        # Returns a structured summary of additions, deletions, and modifications
+5. External Tools (/core/mcp_tools/)
+code
+Python
+
+download
+
+content_copy
+
+expand_less
+class SlackNotifier:
+    def send_alert(self, webhook_url: str, event: PolicyEvent) -> dict:
+        # Constructs a Slack Blocks JSON payload
+        # POSTs to the provided webhook URL
+        # Returns the response from Slack API
+
+class JiraTicketCreator:
+    def create_issue(self, config: JiraConfig, event: PolicyEvent) -> dict:
+        # Constructs a Jira REST API v3 payload
+        # POSTs to https://<your-site>.atlassian.net/rest/api/3/issue
+        # Returns the response from Jira API
+Data Models (TiDB Schema)
+The database schema is precisely defined by the CREATE TABLE statements in Blueprint.txt, Section 3. Key tables include:
+
+projects: The top-level entity.
+models, datasets, prompts, tools: Normalized AI asset tables with foreign keys to projects.
+prompt_blobs: Stores prompt text, de-duplicated by SHA256 hash.
+evidence_chunks: Stores text chunks for retrieval, with text, emb VECTOR(1536), and an optional FULLTEXT KEY.
+boms: Stores the versioned CycloneDX BOM JSON.
+bom_diffs: Stores the structured diff between two BOMs.
+policies, policy_overrides, policy_events, suppressions: The full policy evaluation and management schema.
+actions: An audit log of all outbound calls to external tools like Slack and Jira.
+Testing Strategy
+Unit Testing
+Normalize: Verify correct classification and SPDX mapping.
+DiffEngine: Test with known BOMs to ensure correct diff output.
+PolicyEngine: Test each rule with mock events that should and should not trigger it.
+RRF: Validate fusion logic with sample ranked lists.
+Integration Testing
+Database: Test migrations (up and down), connection handling, and the FTS self-detection fallback logic.
+Embedding Provider: Test a full cycle of embedding text and querying it with VEC_COSINE_DISTANCE against the TiDB cluster.
+External APIs: Test live integrations with Slack and Jira using test channels/projects and real credentials.
+End-to-End (E2E) Testing
+The primary E2E test is defined by the "One-shot prompt to Kiro" in GPTresponse.txt, Section 8. This test MUST be automated in CI.
+
+Run migrations against a live TiDB Serverless instance.
+Resize vector column to 768 for a Gemini test case.
+Run selftest() to confirm DB/Vector/FTS/keys are OK.
+Seed a demo project and run Scan v1, confirming boms=1.
+Apply a scripted change (e.g., model 8B→70B, license tweak) and run Scan v2.
+Confirm boms>=2, bom_diffs>=1, policy_events>=1.
+Execute a VEC_COSINE_DISTANCE query and validate the output format.
+Send a real Slack alert and verify the actions table shows status:"ok".
+Validate the latest BOM with cyclonedx-python-lib and confirm PASS.
+The entire workflow is run within a GitHub Action.
+Deployment Architecture
+Local Development (MacBook Air M2)
+Environment: uv virtual environment with Python 3.11+.
+Dependencies: Installed via uv pip install -r requirements.txt. Key libraries include fastapi, langgraph, gitpython, cyclonedx-python-lib, mysql-connector-python, rank-bm25.
+CLI Tools: mysql-client (via Homebrew) for direct DB access. Optional scancode-toolkit or licensee.
+Configuration: All secrets (API keys, DB URLs) managed via a .env file.
+Cloud Services
+Database: TiDB Serverless.
+Embedding/LLM: OpenAI API, Google Gemini API, or OpenRouter.
+Notifications: Slack (Incoming Webhooks), Jira (Cloud REST API).
+Source Code: GitHub.
+CI/CD: GitHub Actions.
+Implementation Plan
+
+1. Foundation & Setup
+
+
+Initialize project structure (ai-bom-autopilot/) with directories for apps, core, infra, etc.
+
+Setup uv virtual environment and requirements.txt.
+
+Install base dependencies: fastapi, uvicorn, langgraph, pydantic, gitpython, python-decouple, mysql-connector-python.
+
+Create a .env.example file with all required variables from GPTresponse.txt, §7.
+
+Provision a TiDB Serverless cluster and populate local .env with real credentials.
+Requirements: 8.1, 8.2
+
+2. Database Schema and Migrations
+
+
+Create migration scripts for all tables defined in the design document.
+
+Implement a migration runner (python -m core.db.migrations up).
+
+Implement the startup self-test: attempt to create a FULLTEXT KEY; on failure, set a global flag to use in-app BM25.
+
+Implement a self-test function (selftest()) that prints status for DB connection, Vector functions, FTS/BM25 mode, and API keys.
+Requirements: 6.3, 6.4, 8.4
+
+3. Asset Discovery and Normalization
+
+
+Implement ScanGit service to walk a local Git repository clone.
+
+Implement ScanHF service to fetch and cache model/dataset cards.
+
+Implement Normalize service to classify artifacts.
+
+Integrate scancode-toolkit or licensee as a subprocess for SPDX license mapping. unknown licenses must be flagged.
+Requirements: 1.1, 1.2, 1.3, 1.4, 1.5
+
+4. Embedding and Hybrid Search
+
+
+Implement Embed+Index service for chunking text and generating embeddings.
+
+Add logic to switch between embedding providers (openai, gemini) based on EMBED_PROVIDER env var.
+
+Implement the ALTER TABLE migration script to resize the emb column.
+
+Implement the HybridSearchEngine with VEC_COSINE_DISTANCE queries.
+
+Implement both TiDB MATCH(...) and in-app rank-bm25 paths for keyword search.
+
+Implement RRF fusion logic.
+Requirements: 6.1, 6.2, 6.5, 7.1, 7.2, 7.3, 7.4
+
+5. BOM, Diff, and Policy Engines
+
+
+Implement BOMGen service using cyclonedx-python-lib.
+
+Add a validation step post-generation that shells out to cyclonedx-python-lib validate command and captures PASS.
+
+Implement DiffPrev service for structural comparison of two BOMs.
+
+Implement PolicyCheck service with the 5 starter policies and the dedupe_key logic.
+Requirements: 2.1, 2.2, 2.3, 2.4, 3.2, 3.4, 4.1, 4.2, 4.3, 4.5
+
+6. External Tool Integration (MCPs)
+
+
+Implement SlackNotifier using an https://hooks.slack.com/services/... URL.
+
+Implement JiraTicketCreator using the Jira Cloud REST API.
+
+Ensure every call to these services writes a detailed log to the actions table.
+Requirements: 5.1, 5.2, 5.3, 5.4
+
+7. Orchestration and API
+
+
+Build the LangGraph DAG connecting all services from step 3 through 6.
+
+Create a FastAPI endpoint POST /scan that accepts {"project":"demo"} and triggers the LangGraph execution.
+
+The endpoint should return the final state, including BOM ID, diff summary, and action IDs.
+Requirements: 3.1, 4.1, 5.1
+
+8. Minimal UI
+
+
+Build a simple Streamlit or FastAPI+HTMX single-page application.
+
+Add UI elements: project selector, "Run Scan" button, and tabs for results.
+
+Implement buttons to trigger Slack/Jira notifications based on selected policy events.
+
+Add the health check status display (🟢/🟡/🔴).
+Requirements: 8.1, 8.2, 8.3, 8.4, 8.5
+
+9. Seeding and Demonstration
+
+
+Create a seed/ directory with a sample Git project.
+
+Write a script (seed/create_demo_project.py) to initialize the project in the DB.
+
+Write a script that makes the "scripted change" (8B→70B model + license tweak) to the sample repo to guarantee a rich diff for the demo.
+Requirements: 3.5, Test Plan
+
+10. CI and Documentation
+
+
+Create a GitHub Actions workflow (.github/workflows/ci.yml).
+
+The workflow MUST install dependencies, run migrations, and execute the full E2E test plan from the design document.
+
+Write the README.md with one-command run instructions.
+
+Create a data-flow diagram for the README.
+
+Record a <3 minute demo video following the script in Blueprint.txt, §12.
+Requirements: Test Plan, Submission Criteria
+
+
+Runtime AI-BOM via eBPF concept.
+This keeps the TiDB-heavy architecture from your original, but pivots to runtime telemetry — making it far rarer and more defensible as “novel.”
+
+⸻
+
+Runtime AI-BOM Autopilot
+
+0) One-Liner Goal
+
+Live-capture all ML/AI components actually used at runtime (models, datasets, prompts, tools) via eBPF syscall tracing → generate CycloneDX ML-BOM → store in TiDB → diff → policy → alert.
+
+⸻
+
+1) Why It’s Novel
+	•	Vendors generate AI-BOM from static repos — few capture runtime usage.
+	•	eBPF lets you hook into kernel-level events (file opens, network pulls) with negligible overhead.
+	•	Ties CycloneDX ML-BOM standard to runtime telemetry for the first time (in a hackathon setting).
+	•	Perfect TiDB sponsor fit: vector search on evidence chunks + full-text fallback, storing BOM history with provenance.
+
+⸻
+
+2) Deliverables
+	•	Agent: eBPF-based tracer (bcc/libbpf/py-bpfcc) that logs model/dataset/prompt access in real time.
+	•	BOM Generator: Normalize runtime events to CycloneDX ML-BOM 1.6 JSON.
+	•	DB layer: TiDB schema for projects, runtime artifacts, embeddings, BOMs, diffs, policies, evidence.
+	•	Policy engine: Rules for unapproved model loads, license issues, prompt changes.
+	•	UI: Run scan, view BOM, diffs, triggered policies, evidence click-through.
+	•	Demo: Launch sample ML app → see BOM auto-populate → change model → see diff + alerts.
+
+⸻
+
+3) Architecture
+
+Flow:
+	1.	eBPF Tracer: Hooks open(), read(), connect() syscalls. Filters events for:
+	•	File extensions: .pt, .bin, .safetensors, .json, .yaml
+	•	Paths containing /models/, /datasets/, /prompts/
+	•	Network calls to HF/CDN endpoints
+	2.	Event Normalizer: Maps to {type: model/dataset/prompt, name, path, source_url, commit_sha?}; queries HF API for license/meta if applicable.
+	3.	BOM Generator: CycloneDX ML-BOM (component type, version, hashes, licenses).
+	4.	Embed & Index: Text chunks from metadata → 1536-dim embeddings → store in TiDB VECTOR(1536) with HNSW.
+	5.	BOM Diff: Compare to last BOM; stable IDs ensure accurate change tracking.
+	6.	Policy Engine: License allowlist, unapproved provider, version drift, protected path change.
+	7.	Notify: Slack/Jira integration.
+	8.	UI: Single-page: BOM tab, Diff tab, Policy tab, Actions tab.
+
+⸻
+
+4) TiDB Schema (Additions for Runtime)
+
+CREATE TABLE runtime_events (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  project_id BIGINT NOT NULL,
+  ts TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  pid INT,
+  process_name VARCHAR(255),
+  syscall VARCHAR(64),
+  path TEXT,
+  source_url TEXT,
+  type ENUM('model','dataset','prompt','tool') NOT NULL,
+  hash CHAR(64),
+  meta JSON,
+  emb VECTOR(1536),
+  KEY idx_proj_ts (project_id, ts),
+  FULLTEXT KEY ft_path (path) -- if supported
+);
+
+-- BOMs, bom_diffs, policies, policy_events remain as in your original plan
+
+
+⸻
+
+5) Retrieval
+	•	ANN search: Find similar runtime artifacts across history.
+	•	FTS/BM25 fallback: Search by path/name/license.
+	•	RRF fusion: Merge ANN + keyword results.
+
+⸻
+
+6) Policy Pack v1
+	•	missing_license (high)
+	•	unapproved_provider (high)
+	•	model_bump_major/minor (med/low)
+	•	protected_prompt_change (high)
+	•	unknown_dataset_origin (med)
+
+⸻
+
+7) Demo Plan (3 minutes)
+	1.	Start mlbom-agent (eBPF tracer).
+	2.	Run sample ML app: loads bert-base-uncased from HF → runtime event captured → BOM v1 in UI.
+	3.	Swap model to bert-large + dataset with unknown license → rerun.
+	4.	BOM v2 appears → Diff shows model bump + license issue → policy flags → Slack/Jira alert.
+	5.	Click policy → evidence shows file path, PID, and syscall trace.
+
+⸻
+
+8) Tech Stack
+	•	Python (FastAPI backend, Streamlit/HTMX UI)
+	•	eBPF (bcc/libbpf, py-bpfcc)
+	•	TiDB Serverless (VECTOR, FTS)
+	•	OpenAI/HF embeddings
+	•	CycloneDX Python Lib
+	•	Slack/Jira Webhooks
+
+⸻
+
+9) Build Feasibility
+	•	eBPF file access hook + JSON log: 8–12h
+	•	Event normalizer + HF API meta fetch: 4–6h
+	•	BOM gen + TiDB ingest: 8–10h
+	•	Embedding + HNSW index: 6–8h
+	•	Policy engine: 6–8h
+	•	UI: 8–10h
+	•	Demo repo + docs: 6–8h
+Total: ~46–62h (solo), safe for hackathon.
+
+⸻
+
+10) Risks & Mitigation
+	•	eBPF permissions: Run in dev container with --privileged for demo.
+	•	Noise filtering: Path/extension allowlist to reduce irrelevant events.
+	•	FTS support: Detect at startup, fallback to BM25 if missing.
+	•	Licenses: Cache HF license lookups.
