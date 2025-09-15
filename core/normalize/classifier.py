@@ -226,9 +226,18 @@ class ArtifactClassifier:
                         state.datasets.append(dataset)
             
             # Process files for prompts and tools
-            repo_path = f"/tmp/repos/{state.project.repo_url.split('/')[-1].replace('.git', '')}"
+            repo_path = f"repos/id={state.project.id}_{state.project.name.replace(' ', '_')}"
             
-            for file_path in state.files:
+            # Convert file_candidates to files list for processing
+            if hasattr(state, 'file_candidates') and state.file_candidates:
+                file_paths = [candidate.file_path for candidate in state.file_candidates]
+                # Get commit_sha from first candidate if not set
+                if not state.commit_sha and state.file_candidates:
+                    state.commit_sha = state.file_candidates[0].commit_sha
+            else:
+                file_paths = getattr(state, 'files', [])
+            
+            for file_path in file_paths:
                 full_path = Path(repo_path) / file_path
                 
                 # Extract ML models from Python files
