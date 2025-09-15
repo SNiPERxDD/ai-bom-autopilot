@@ -8,27 +8,21 @@ logger = logging.getLogger(__name__)
 
 class DatabaseManager:
     def __init__(self):
-        # Try to get full TiDB URL first, fallback to components
-        tidb_url = config('TIDB_URL', default='')
+        # Build from components for TiDB Cloud
+        db_host = config('TIDB_URL')
+        db_user = config('DB_USER')
+        db_pass = config('DB_PASS') 
+        db_name = config('DB_NAME')
         
-        if tidb_url.startswith('mysql://'):
-            # Full connection string provided
-            self.tidb_url = tidb_url.replace('mysql://', 'mysql+pymysql://')
-        else:
-            # Build from components
-            db_host = config('TIDB_URL')
-            db_user = config('DB_USER')
-            db_pass = config('DB_PASS')
-            db_name = config('DB_NAME')
-            
-            # TiDB Cloud connection format
-            self.tidb_url = f"mysql+pymysql://{db_user}:{db_pass}@{db_host}:4000/{db_name}?ssl_verify_cert=true&ssl_verify_identity=true"
+        # TiDB Cloud connection format - secure connection required
+        self.tidb_url = f"mysql+pymysql://{db_user}:{db_pass}@{db_host}:4000/{db_name}"
         
         self.engine = create_engine(
             self.tidb_url,
             pool_pre_ping=True,
             pool_recycle=300,
-            echo=config('DEBUG', default=False, cast=bool)
+            echo=False,
+            connect_args={"ssl": {"ssl_disabled": False}}
         )
         self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
         self.capabilities = self._detect_capabilities()
