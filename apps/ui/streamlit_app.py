@@ -94,18 +94,27 @@ def show_main_interface():
             st.error(f"Failed to connect to API. Make sure the backend is running on {API_BASE}")
             return
         
-        if not projects:
-            st.warning("No projects found. Create a project first in the Projects tab.")
+        # Project selector
+        project_options = [f"{p['name']}" for p in projects] + ["Add New Project..."]
+        selected_project_name = st.selectbox("Select Project", project_options, key="main_project_selector")
+
+        if selected_project_name == "Add New Project...":
+            show_projects()
+            return
+
+        if not projects and selected_project_name != "Add New Project...":
+            st.warning("No projects found. Create a project first.")
             show_projects()
             return
         
-        # Project selector
-        project_options = [f"{p['name']}" for p in projects]
-        selected_project_name = st.selectbox("Select Project", project_options, key="main_project_selector")
-        
         if selected_project_name:
-            project = next(p for p in projects if p['name'] == selected_project_name)
-            st.session_state.selected_project = project
+            project = next((p for p in projects if p['name'] == selected_project_name), None)
+            if project:
+                st.session_state.selected_project = project
+            else:
+                # This case handles when "Add New Project..." is the only option left after a project is deleted
+                show_projects()
+                return
     
     with col2:
         # Dry run toggle
