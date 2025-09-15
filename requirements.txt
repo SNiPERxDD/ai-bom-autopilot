@@ -23,5 +23,7 @@ pyyaml==6.0.1
 cryptography==41.0.7
 google-generativeai==0.3.2
 license-expression==30.4.4
-bcc==0.1.7  # Optional: Required only for eBPF runtime tracing
+# Note: BPF Compiler Collection not available - using process monitoring fallback
+# For eBPF support, install python3-bpfcc on Ubuntu/Debian or python3-bcc on other systems
+# The application gracefully falls back to process monitoring when eBPF is unavailable
 psutil==5.9.6
