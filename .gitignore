@@ -250,3 +250,8 @@ temp/
 Errors.txt
 .github/
 .kiro/
+z_buildchats/
+z_buildchats/Blueprint.txt
+z_buildchats/Build_Chats.txt
+z_buildchats/GPTresponse.txt
+z_buildchats/HARD_REQUIREMNTS.md
