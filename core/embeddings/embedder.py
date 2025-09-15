@@ -1,5 +1,4 @@
 import openai
-import tiktoken
 import hashlib
 import json
 import math
@@ -18,7 +17,7 @@ class EmbeddingService:
     
     def __init__(self):
         self.provider = config('EMBED_PROVIDER', default='openai').lower()
-        self.encoding = tiktoken.get_encoding("cl100k_base")
+        self.encoding = None  # Will be initialized by provider
         self.max_tokens_per_chunk = 800
         self.chunk_overlap = 100
         
@@ -55,6 +54,10 @@ class EmbeddingService:
     def _initialize_openai(self):
         """Initialize OpenAI embedding provider (Requirement 7.1)"""
         try:
+            # Import tiktoken only when using OpenAI
+            import tiktoken
+            self.encoding = tiktoken.get_encoding("cl100k_base")
+            
             api_key = config('OPENAI_API_KEY', default=None)
             if not api_key or api_key == 'sk-test':
                 logger.warning("⚠️  OpenAI API key not configured or using test key")
@@ -96,6 +99,9 @@ class EmbeddingService:
     def _initialize_gemini(self):
         """Initialize Gemini embedding provider (Requirement 7.2)"""
         try:
+            # For Gemini, we use a simple token counter (approximate)
+            self.encoding = None  # Will use _count_tokens_simple method
+            
             api_key = config('GEMINI_API_KEY', default=None)
             if not api_key:
                 logger.warning("⚠️  Gemini API key not configured")
@@ -155,6 +161,35 @@ class EmbeddingService:
         
         logger.info(f"✅ Embedding dimensions validated: {self.dimensions}")
     
+    def _count_tokens(self, text: str) -> int:
+        """Count tokens in text, provider-agnostic"""
+        if self.encoding:
+            # Use tiktoken for OpenAI
+            return len(self.encoding.encode(text))
+        else:
+            # Simple approximation for Gemini (roughly 4 chars per token)
+            return len(text) // 4
+    
+    def _encode_text(self, text: str) -> List[int]:
+        """Encode text to tokens, provider-agnostic"""
+        if self.encoding:
+            return self.encoding.encode(text)
+        else:
+            # For Gemini, create fake tokens (split by words)
+            words = text.split()
+            return list(range(len(words)))
+    
+    def _decode_tokens(self, tokens: List[int], original_text: str = None) -> str:
+        """Decode tokens to text, provider-agnostic"""
+        if self.encoding:
+            return self.encoding.decode(tokens)
+        else:
+            # For Gemini, use word-based approximation
+            if original_text:
+                words = original_text.split()
+                return ' '.join(words[:len(tokens)])
+            return ""
+    
     def process_evidence(self, state: ScanState) -> ScanState:
         """Process and embed evidence chunks"""
         try:
@@ -198,7 +233,7 @@ class EmbeddingService:
             text_chunks = self._split_text(content)
             
             for i, chunk_text in enumerate(text_chunks):
-                token_count = len(self.encoding.encode(chunk_text))
+                token_count = self._count_tokens(chunk_text)
                 
                 chunk = EvidenceChunk(
                     project_id=project_id,
@@ -233,7 +268,7 @@ class EmbeddingService:
     
     def _split_text(self, text: str) -> List[str]:
         """Split text into chunks with overlap"""
-        tokens = self.encoding.encode(text)
+        tokens = self._encode_text(text)
         chunks = []
         
         if len(tokens) <= self.max_tokens_per_chunk:
@@ -244,7 +279,15 @@ class EmbeddingService:
         while start < len(tokens):
             end = min(start + self.max_tokens_per_chunk, len(tokens))
             chunk_tokens = tokens[start:end]
-            chunk_text = self.encoding.decode(chunk_tokens)
+            chunk_text = self._decode_tokens(chunk_tokens, text)
+            
+            # For non-tiktoken providers, use character-based chunking as fallback
+            if not self.encoding and chunk_text == "":
+                # Fall back to character-based chunking
+                char_start = (start * len(text)) // len(tokens)
+                char_end = (end * len(text)) // len(tokens)
+                chunk_text = text[char_start:char_end]
+            
             chunks.append(chunk_text)
             
             if end >= len(tokens):
