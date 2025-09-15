@@ -87,6 +87,94 @@ class ArtifactClassifier:
             logger.warning(f"Failed to extract models from {file_path}: {e}")
             return models
     
+    def _extract_models_from_serialized_file(self, project_id: int, file_path: str, full_path: Path, commit_sha: str) -> List[Model]:
+        """Extract ML models from serialized files (.pkl, .h5, .pt, etc.)"""
+        models = []
+        
+        try:
+            base_name = Path(file_path).stem
+            file_ext = Path(file_path).suffix.lower()
+            
+            # Try to detect license (check parent directory for LICENSE files)
+            license, is_unknown = self._normalize_license_enhanced(None, full_path.parent)
+            
+            # Determine model type and provider based on file extension and name
+            provider = "unknown"
+            model_type = "unknown"
+            
+            # Pattern matching for common model files
+            if file_ext in ['.pkl', '.pickle', '.joblib']:
+                if 'xgboost' in base_name.lower() or 'xgb' in base_name.lower():
+                    provider = "xgboost"
+                    model_type = "gradient_boosting"
+                elif 'lightgbm' in base_name.lower() or 'lgb' in base_name.lower():
+                    provider = "lightgbm"
+                    model_type = "gradient_boosting"
+                elif 'sklearn' in base_name.lower() or 'scikit' in base_name.lower():
+                    provider = "scikit-learn"
+                    model_type = "machine_learning"
+                elif 'model' in base_name.lower():
+                    provider = "sklearn_compatible"
+                    model_type = "machine_learning"
+                else:
+                    provider = "pickle"
+                    model_type = "serialized_model"
+            elif file_ext in ['.h5', '.hdf5']:
+                provider = "keras"
+                model_type = "deep_learning"
+            elif file_ext in ['.pt', '.pth']:
+                provider = "pytorch"
+                model_type = "deep_learning"
+            elif file_ext == '.onnx':
+                provider = "onnx"
+                model_type = "deep_learning"
+            elif file_ext == '.pb':
+                provider = "tensorflow"
+                model_type = "deep_learning"
+            elif file_ext == '.safetensors':
+                provider = "huggingface"
+                model_type = "transformer"
+            
+            # Create canonical ID for model
+            model_id = hashlib.md5(f"{project_id}:{file_path}".encode('utf-8')).hexdigest()
+            
+            # Get file size for metadata
+            try:
+                file_size = full_path.stat().st_size
+            except:
+                file_size = 0
+            
+            # Create metadata for the model
+            meta = {
+                'file_path': file_path,
+                'file_extension': file_ext,
+                'file_size_bytes': file_size,
+                'model_type': model_type,
+                'canonical_id': model_id,
+                'detection_method': 'file_extension_analysis'
+            }
+            
+            if is_unknown:
+                meta['license_warning'] = f"Unknown or unrecognized license: {license}"
+            
+            model = Model(
+                project_id=project_id,
+                name=base_name,
+                provider=provider,
+                version="unknown",
+                license=license or "unknown",
+                repo_path=file_path,
+                commit_sha=commit_sha,
+                meta=meta
+            )
+            models.append(model)
+            
+            return models
+            
+        except Exception as e:
+            logger.warning(f"Failed to extract models from serialized file {file_path}: {e}")
+            return models
+    
     def __init__(self):
         self.spdx_license_map = {
             'mit': 'MIT',
@@ -234,6 +322,11 @@ class ArtifactClassifier:
                 # Extract ML models from Python files
                 if file_path.endswith('.py'):
                     models = self._extract_models_from_file(state.project.id, file_path, full_path, state.commit_sha)
+                    state.models.extend(models)
+                
+                # Extract ML models from serialized files (pkl, h5, pt, etc.)
+                elif any(file_path.endswith(ext) for ext in ['.pkl', '.pickle', '.h5', '.hdf5', '.pt', '.pth', '.onnx', '.pb', '.safetensors', '.joblib', '.model']):
+                    models = self._extract_models_from_serialized_file(state.project.id, file_path, full_path, state.commit_sha)
                     state.models.extend(models)
                 
                 if self._is_prompt_file(file_path):

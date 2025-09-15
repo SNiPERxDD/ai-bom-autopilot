@@ -23,7 +23,10 @@ class GitScanner:
     
     def __init__(self):
         # Target file extensions for ML artifacts as specified in requirements
-        self.target_extensions = {'.py', '.ipynb', '.yaml', '.yml', '.json', '.md', '.prompt'}
+        # Added common ML model file extensions to detect serialized models
+        self.target_extensions = {'.py', '.ipynb', '.yaml', '.yml', '.json', '.md', '.prompt', 
+                                '.pkl', '.pickle', '.h5', '.pt', '.pth', '.onnx', '.pb', 
+                                '.joblib', '.bin', '.safetensors', '.model'}
         
         # Built-in ignore patterns (in addition to .gitignore)
         self.builtin_ignore_patterns = [
