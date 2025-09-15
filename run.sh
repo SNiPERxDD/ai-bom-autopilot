@@ -6,16 +6,45 @@ set -e
 
 # Function to handle cleanup on script exit
 cleanup() {
-  echo "� Stopping services..."
+  echo "🛑 Stopping services..."
   if [ -n "$API_PID" ]; then kill $API_PID 2>/dev/null || true; fi
   if [ -n "$UI_PID" ]; then kill $UI_PID 2>/dev/null || true; fi
+
+  # Unset all mapped env vars so they don’t persist after session
+  unset DB_NAME DB_USER DB_PASS TIDB_URL
+  unset OPENAI_API_KEY GEMINI_API_KEY SLACK_WEBHOOK_URL
+  unset JIRA_URL JIRA_USERNAME JIRA_API_TOKEN JIRA_PROJECT_KEY
+  unset HF_TOKEN DEBUG LOG_LEVEL DRY_RUN API_URL
+
   exit 0
 }
 
 # Set up trap for Ctrl+C and script exit
 trap cleanup INT TERM EXIT
 
-echo "�🚀 Starting AI-BOM Autopilot..."
+echo "🚀 Starting AI-BOM Autopilot..."
+
+# === Copilot Agent Session Env Mapping ===
+# If COPILOT_MCP_* vars exist, map them into the plain names the code expects.
+export DB_NAME="${DB_NAME:-$COPILOT_MCP_DB_NAME}"
+export DB_USER="${DB_USER:-$COPILOT_MCP_DB_USER}"
+export DB_PASS="${DB_PASS:-$COPILOT_MCP_DB_PASS}"
+export TIDB_URL="${TIDB_URL:-$COPILOT_MCP_TIDB_URL}"
+
+export OPENAI_API_KEY="${OPENAI_API_KEY:-$COPILOT_MCP_OPENAI_API_KEY}"
+export GEMINI_API_KEY="${GEMINI_API_KEY:-$COPILOT_MCP_GEMINI_API_KEY}"
+export SLACK_WEBHOOK_URL="${SLACK_WEBHOOK_URL:-$COPILOT_MCP_SLACK_WEBHOOK_URL}"
+export JIRA_URL="${JIRA_URL:-$COPILOT_MCP_JIRA_URL}"
+export JIRA_USERNAME="${JIRA_USERNAME:-$COPILOT_MCP_JIRA_USERNAME}"
+export JIRA_API_TOKEN="${JIRA_API_TOKEN:-$COPILOT_MCP_JIRA_API_TOKEN}"
+export JIRA_PROJECT_KEY="${JIRA_PROJECT_KEY:-$COPILOT_MCP_JIRA_PROJECT_KEY}"
+export HF_TOKEN="${HF_TOKEN:-$COPILOT_MCP_HF_TOKEN}"
+
+export DEBUG="${DEBUG:-true}"
+export LOG_LEVEL="${LOG_LEVEL:-INFO}"
+export DRY_RUN="${DRY_RUN:-false}"
+
+# ==========================================
 
 # Get absolute path to script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
@@ -60,7 +89,11 @@ sleep 15
 # Start Streamlit UI
 echo "🎨 Starting Streamlit UI..."
 export API_URL="http://127.0.0.1:8000"
-streamlit run "$SCRIPT_DIR/apps/ui/streamlit_app.py" --server.port 8501 --server.address 127.0.0.1 --browser.serverAddress 127.0.0.1 --server.headless=false &
+streamlit run "$SCRIPT_DIR/apps/ui/streamlit_app.py" \
+  --server.port 8501 \
+  --server.address 127.0.0.1 \
+  --browser.serverAddress 127.0.0.1 \
+  --server.headless=false &
 UI_PID=$!
 
 echo "✅ AI-BOM Autopilot is running!"
