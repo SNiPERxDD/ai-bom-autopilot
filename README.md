@@ -201,28 +201,12 @@ RUNTIME_DURATION=30
 
 1. **Clone and Install**
    ```bash
-   git clone <your-repo>
+   git clone https://github.com/SNiPERxDD/ai-bom-autopilot.git
    cd ai-bom-autopilot
    cp .env.example .env
    # Edit .env with your credentials
    ```
-
-2. **Install Dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Initialize Database**
-   ```bash
-   python -m core.db.migrations up
-   ```
-
-4. **Run Tests**
-   ```bash
-   python run_all_tests.py
-   ```
-
-5. **Start Services**
+2. **Quick setup & run**
    ```bash
    ./run.sh
    ```
