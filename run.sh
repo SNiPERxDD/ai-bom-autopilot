@@ -10,6 +10,22 @@ cleanup() {
   if [ -n "$API_PID" ]; then kill $API_PID 2>/dev/null || true; fi
   if [ -n "$UI_PID" ]; then kill $UI_PID 2>/dev/null || true; fi
 
+ 
+  # Clean up temporary repositories (Task 3: Session cleanup)
+  echo "🧹 Cleaning up temporary repositories..."
+  if [ -d "/tmp/ai_bom_repos" ]; then
+    rm -rf /tmp/ai_bom_repos
+    echo "✅ Temporary repositories cleaned up"
+  fi
+
+  # Clean up any cloned repositories in the workspace
+  find . -name ".git" -type d 2>/dev/null | grep -v "^./.git$" | while read gitdir; do
+    repo_dir=$(dirname "$gitdir")
+    if [ "$repo_dir" != "." ]; then
+      echo "🗑️ Removing cloned repository: $repo_dir"
+      rm -rf "$repo_dir"
+    fi
+  done
   # Unset all mapped env vars so they don’t persist
   unset DB_NAME DB_USER DB_PASS TIDB_URL
   unset OPENAI_API_KEY GEMINI_API_KEY SLACK_WEBHOOK_URL
@@ -106,14 +122,15 @@ API_PID=$!
 echo "⏳ Waiting for API to start..."
 sleep 15
 
-# Start Streamlit UI
-echo "🎨 Starting Streamlit UI..."
+# Start Streamlit UI (using simplified version)
+echo "🎨 Starting Minimalist Streamlit UI..."
 export API_URL="http://127.0.0.1:8000"
-streamlit run "$SCRIPT_DIR/apps/ui/streamlit_app.py" \
+streamlit run "$SCRIPT_DIR/apps/ui/streamlit_app_simple.py" \
   --server.port 8501 \
   --server.address 127.0.0.1 \
   --browser.serverAddress 127.0.0.1 \
-  --server.headless=false &
+  --server.headless=true \
+  --client.toolbarMode=minimal &
 UI_PID=$!
 
 echo "✅ AI-BOM Autopilot is running!"
