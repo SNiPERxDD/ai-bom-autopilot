@@ -1,33 +1,37 @@
 # AI-BOM Autopilot UI
 
-A simple Streamlit-based single-page application for managing AI/ML Bill of Materials (BOM) scans and policy compliance.
+A minimalist Streamlit-based single-page application for managing AI/ML Bill of Materials (BOM) scans and policy compliance.
 
 ## Features
 
-### Main Interface
-- **Project Selector**: Choose from available projects
-- **Run Scan Button**: Execute ML-BOM scans with optional dry-run mode
-- **Health Status**: Real-time indicators for system health (🟢/🟡/🔴)
+### Clean, Minimalist Design
+- **System Status Indicators**: Real-time health monitoring (🟢/🟡/🔴)
+- **Project Management**: Dropdown selector with "Add New Project" option
+- **Quick Actions**: Prominent Scan and Dry Run buttons
+- **Tabbed Interface**: Organized results in BOMs, Changes, Policies, Actions tabs
 
-### Results Tabs
-1. **📋 BOM Tab**: View generated Bill of Materials with component breakdown
-2. **🔄 Diff Tab**: Compare BOM versions and see changes
-3. **⚠️ Policy Tab**: Review policy violations with action buttons
-4. **📤 Actions Tab**: View notification history and external integrations
+### Core Capabilities
+- **Project Creation**: Inline form for adding new projects directly from dropdown
+- **Scan Operations**: Full scan and dry run modes with progress indication
+- **Policy Compliance**: View violations by severity with action buttons
+- **Notifications**: Send Slack alerts or create Jira tickets for policy violations
+- **Change Tracking**: Compare BOM versions to identify drift
 
-### Key Capabilities
-- **Dry Run Mode**: Test scans without making changes or sending notifications
-- **Action Triggers**: Send Slack notifications or create Jira tickets directly from policy events
-- **Real-time Health Monitoring**: Database, vector search, full-text search, and API key status
-- **Interactive Results**: Expandable sections, metrics, and visual charts
+### Enhanced User Experience
+- **Intuitive Navigation**: Single-page design with logical flow
+- **Immediate Feedback**: Progress indicators and status messages
+- **Error Handling**: Graceful degradation with helpful error messages
+- **Responsive Layout**: Clean design that works on different screen sizes
 
 ## Usage
 
 ### Starting the UI
 ```bash
 # From the ai-bom-autopilot directory
-streamlit run apps/ui/streamlit_app.py
+./run.sh
 ```
+
+The minimalist UI will be available at http://localhost:8501
 
 The UI will be available at http://localhost:8501
 
