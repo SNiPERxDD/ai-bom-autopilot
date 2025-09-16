@@ -54,15 +54,10 @@ if [ ! -f .env ]; then
     cp .env.example .env
 fi
 
-# Load .env ONLY if environment variables aren't already set (local dev only)
-if [ -z "$DB_USER" ] || [ -z "$DB_PASS" ] || [ -z "$DB_NAME" ] || [ -z "$TIDB_URL" ]; then
-  echo "📄 Loading .env for local development..."
-  set -a
-  source .env
-  set +a
-else
-  echo "🔧 Using injected environment variables (Copilot MCP mode)"
-fi
+# Load .env (local dev only; won’t override Copilot MCP if already set)
+set -a
+source .env
+set +a
 
 # Ensure DB vars are set
 if [ -z "$DB_USER" ] || [ -z "$DB_PASS" ] || [ -z "$DB_NAME" ] || [ -z "$TIDB_URL" ]; then
