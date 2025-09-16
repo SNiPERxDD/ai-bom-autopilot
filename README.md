@@ -8,6 +8,7 @@
 
 ## 🚀 Quick Start
 
+**TiDB Cloud account Email associated with the Project : menamaster05@gmail.com**
 **One-command setup and demo:**
 ```bash
 git clone https://github.com/SNiPERxDD/ai-bom-autopilot.git
