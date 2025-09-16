@@ -2,13 +2,12 @@
 
 **Auto-discover ML artifacts → Generate standards-compliant CycloneDX ML-BOM → Policy checking → Notifications**
 
-[![Tests](https://img.shields.io/badge/tests-passing-brightgreen)](./run_all_tests.py)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://python.org)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 ## 🚀 Quick Start
 
-**One-command setup and demo:**
+**One-command setup and deployment:**
 ```bash
 git clone https://github.com/SNiPERxDD/ai-bom-autopilot.git
 cd ai-bom-autopilot
@@ -16,9 +15,9 @@ cd ai-bom-autopilot
 ```
 
 This will:
-1. Install dependencies and run comprehensive tests
+1. Install dependencies and run database migrations
 2. Start the API server (http://localhost:8000)
-3. Start the Streamlit UI (http://localhost:8501)
+3. Start the minimalist Streamlit UI (http://localhost:8501)
 
 **Monitoring Scan Progress:**
 ```bash
@@ -33,12 +32,23 @@ This will:
 ```bash
 # Kill all running services
 ./cleanup.sh
+**How to Use:**
+See [HOW_TO_USE.md](HOW_TO_USE.md) for a comprehensive user guide covering all features and workflows.
+
+**Monitoring Scan Progress:**
+```bash
+# View scan progress in real-time
+./monitor_scan.py
+
+# Check scan status once without continuous monitoring
+./monitor_scan.py --once
 ```
 
-**ML Model Detection:**
-See [ML Model Detection Documentation](docs/ML_MODEL_DETECTION.md) for details on how the system detects machine learning models like XGBoost and autoencoders, as well as information about repository organization.
-3. Start the UI dashboard (http://localhost:8501)
-4. Create and run a demo project
+**Cleanup Script:**
+```bash
+# Kill all running services and clean up repositories
+./cleanup.sh
+```
 
 ## 🏗️ Architecture Overview
 
